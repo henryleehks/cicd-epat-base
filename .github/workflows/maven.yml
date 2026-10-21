@@ -20,3 +20,14 @@ jobs:
         cache: maven
     - name: Unit Testing with Maven
       run: mvn test
+
+  snyk-security-scan:
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Snyk CLI
+      uses: snyk/actions/setup@master
+    - name: Scan dependencies with Snyk
+      run: snyk test --severity-threshold=high
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
