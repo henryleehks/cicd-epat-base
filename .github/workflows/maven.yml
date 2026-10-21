@@ -40,7 +40,7 @@ jobs:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
   docker-build:
-    needs: snyk-security-scan
+    needs: build-test
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -86,7 +86,7 @@ jobs:
         trivyignores: .trivyignore
 
   telegram-notify:
-    needs: [build-test, snyk-security-scan, docker-build, container-scan]
+    needs: [build-test, snyk-security-scan]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -100,8 +100,6 @@ jobs:
         SHA: ${{ github.sha }}
         BUILD_RESULT: ${{ needs.build-test.result }}
         SNYK_RESULT: ${{ needs.snyk-security-scan.result }}
-        DOCKER_RESULT: ${{ needs.docker-build.result }}
-        TRIVY_RESULT: ${{ needs.container-scan.result }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
         MESSAGE="CI pipeline finished for ${REPO}
@@ -109,8 +107,6 @@ jobs:
         Commit: ${SHA:0:7} by ${ACTOR}
         Build & test: ${BUILD_RESULT}
         Snyk security scan: ${SNYK_RESULT}
-        Docker image build: ${DOCKER_RESULT}
-        Trivy container scan: ${TRIVY_RESULT}
         Details: ${RUN_URL}"
         curl -sS --fail -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
           --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
