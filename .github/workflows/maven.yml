@@ -39,8 +39,54 @@ jobs:
       env:
         SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
+  docker-build:
+    needs: snyk-security-scan
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    - name: Build Docker image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        push: false
+        load: true
+        tags: |
+          d13revision:latest
+          d13revision:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    - name: Verify image
+      run: docker image inspect d13revision:${{ github.sha }} > /dev/null
+
+  container-scan:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    - name: Load Docker image from build cache
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        push: false
+        load: true
+        tags: d13revision:${{ github.sha }}
+        cache-from: type=gha
+    - name: Scan image with Trivy
+      uses: aquasecurity/trivy-action@0.28.0
+      with:
+        image-ref: d13revision:${{ github.sha }}
+        format: table
+        exit-code: '1'
+        vuln-type: os,library
+        severity: CRITICAL,HIGH,MEDIUM,LOW
+        trivyignores: .trivyignore
+
   telegram-notify:
-    needs: [build-test, snyk-security-scan]
+    needs: [build-test, snyk-security-scan, docker-build, container-scan]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -54,6 +100,8 @@ jobs:
         SHA: ${{ github.sha }}
         BUILD_RESULT: ${{ needs.build-test.result }}
         SNYK_RESULT: ${{ needs.snyk-security-scan.result }}
+        DOCKER_RESULT: ${{ needs.docker-build.result }}
+        TRIVY_RESULT: ${{ needs.container-scan.result }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
         MESSAGE="CI pipeline finished for ${REPO}
@@ -61,6 +109,8 @@ jobs:
         Commit: ${SHA:0:7} by ${ACTOR}
         Build & test: ${BUILD_RESULT}
         Snyk security scan: ${SNYK_RESULT}
+        Docker image build: ${DOCKER_RESULT}
+        Trivy container scan: ${TRIVY_RESULT}
         Details: ${RUN_URL}"
         curl -sS --fail -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
           --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
